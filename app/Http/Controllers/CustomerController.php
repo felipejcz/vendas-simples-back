@@ -4,8 +4,11 @@ namespace App\Http\Controllers;
 
 use Exception;
 use App\Models\Customer;
+use App\Models\Order;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class CustomerController extends Controller
@@ -52,11 +55,14 @@ class CustomerController extends Controller
     public function store(Request $request)
     {
         try {
+            DB::beginTransaction();
             $params = $request->all();
             $params['password'] = bcrypt($params['password']);
             Customer::create($params);
+            DB::commit();
             return redirect('/customers')->with('success', 'Customer created success!');
         } catch (Exception $e) {
+            DB::rollBack();
             Log::debug('CustomerController store Error:');
             Log::debug($e);
             return redirect()->back()->with('error', $e->getMessage())->withInput($request->all());
@@ -112,6 +118,7 @@ class CustomerController extends Controller
     public function update(Request $request)
     {
         try {
+            DB::beginTransaction();
             $params = $request->all();
             $data = Customer::findOrFail($params['id']);
             $data->name = $params['name'];
@@ -125,8 +132,10 @@ class CustomerController extends Controller
                 unset($params['password']);
             }
             $data->save();
+            DB::commit();
             return redirect('/customers')->with('success', 'Customer updated success!');
         } catch (Exception $e) {
+            DB::rollBack();
             Log::debug('CustomerController update Error:');
             Log::debug($e);
             return redirect()->back()->with('error', $e->getMessage());
@@ -142,9 +151,32 @@ class CustomerController extends Controller
     public function destroy($id)
     {
         try {
+            DB::beginTransaction();
+            $msg = 'Customer destroyed success!';
             $data = Customer::findOrFail($id);
-            $data->delete();
-            return redirect('/customers')->with('success', 'Customer destroyed success!');
+            if (Order::where('customer_id', $data->id)->count() > 0) {
+                $data->active = false;
+                $data->save();
+                $msg = 'Customer successfully inactivated!';
+            } else {
+                $data->delete();
+            }
+            DB::commit();
+            return redirect('/customers')->with('success', $msg);
+        } catch (QueryException $e) {
+            DB::rollBack();
+            switch ($e->getCode()) {
+                case 23000:
+                    $msg = 'Cannot delete a product linked to sale.';
+                    break;
+
+                default:
+                    $msg = $e->getMessage();
+                    break;
+            }
+            Log::debug('ProductController destroy Error:');
+            Log::debug($e);
+            return redirect()->back()->with('error', $msg);
         } catch (ModelNotFoundException $e) {
             Log::debug('CustomerController destroy Error:');
             Log::debug($e);
