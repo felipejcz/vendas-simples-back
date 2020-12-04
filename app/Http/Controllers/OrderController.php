@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Customer;
 use Exception;
 use App\Models\Order;
+use App\Models\OrderItems;
+use App\Models\Product;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class OrderController extends Controller
@@ -18,7 +22,7 @@ class OrderController extends Controller
     public function index()
     {
         try {
-            $data = Order::all();
+            $data = Order::all()->load('customer');
             return view('order.index', ['orders' => $data]);
         } catch (Exception $e) {
             Log::debug('OrderController index Error:');
@@ -35,7 +39,9 @@ class OrderController extends Controller
     public function create()
     {
         try {
-            return view('order.create');
+            $products = Product::all();
+            $customers = Customer::all();
+            return view('order.create', ['products' => $products, 'customers' => $customers]);
         } catch (Exception $e) {
             Log::debug('OrderController create Error:');
             Log::debug($e);
@@ -52,10 +58,25 @@ class OrderController extends Controller
     public function store(Request $request)
     {
         try {
+            DB::beginTransaction();
             $params = $request->all();
-            Order::create($params);
+            $products = json_decode($params['order_items'], true);
+            $order = Order::create([
+                'customer_id' => $params['customer_id'],
+                'status' => $params['status'],
+                'description' => $params['description']
+            ]);
+            foreach ($products as $item) {
+                OrderItems::create([
+                    'quantity' => $item['quantity'],
+                    'product_id' => $item['id'],
+                    'order_id' => $order->id
+                ]);
+            }
+            DB::commit();
             return redirect('/orders')->with('success', 'Order created success!');
         } catch (Exception $e) {
+            DB::rollBack();
             Log::debug('OrderController store Error:');
             Log::debug($e);
             return redirect()->back()->with('error', $e->getMessage())->withInput($request->all());
@@ -141,14 +162,18 @@ class OrderController extends Controller
     public function destroy($id)
     {
         try {
+            DB::beginTransaction();
             $data = Order::findOrFail($id);
             $data->delete();
+            DB::commit();
             return redirect('/orders')->with('success', 'Order destroyed success!');
         } catch (ModelNotFoundException $e) {
+            DB::rollBack();
             Log::debug('OrderController destroy Error:');
             Log::debug($e);
             return redirect()->back()->with('error', 'Order not found with this id.');
         } catch (Exception $e) {
+            DB::rollBack();
             Log::debug('OrderController destroy Error:');
             Log::debug($e);
             return redirect()->back()->with('error', $e->getMessage());
