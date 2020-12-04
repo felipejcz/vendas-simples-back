@@ -110,8 +110,11 @@ class OrderController extends Controller
     public function edit($id)
     {
         try {
-            $data = Order::findOrFail($id);
-            return view('order.edit', ['order' => $data]);
+            $order = Order::findOrFail($id);
+            $order_items = OrderItems::where('order_id', $id)->get();
+            $products = Product::all();
+            $customers = Customer::all();
+            return view('order.edit', ['order' => $order, 'order_items' => $order_items, 'products' => $products, 'customers' => $customers]);
         } catch (ModelNotFoundException $e) {
             Log::debug('OrderController edit Error:');
             Log::debug($e);
@@ -132,21 +135,26 @@ class OrderController extends Controller
     public function update(Request $request)
     {
         try {
+            DB::beginTransaction();
             $params = $request->all();
-            $data = Order::findOrFail($params['id']);
-            $data->name = $params['name'];
-            $data->document = $params['document'];
-            $data->address = $params['address'];
-            $data->email = $params['email'];
-            $data->active = $params['active'];
-            if (!is_null($params['password'])) {
-                $data->password = bcrypt($params['password']);
-            } else {
-                unset($params['password']);
+            $products = json_decode($params['order_items'], true);
+            $order = Order::findOrFail($params['id']);
+            $order->customer_id = $params['customer_id'];
+            $order->status = $params['status'];
+            $order->description = $params['description'];
+            $order->save();
+            OrderItems::where('order_id', $order->id)->delete();
+            foreach ($products as $item) {
+                OrderItems::create([
+                    'quantity' => $item['quantity'],
+                    'product_id' => $item['id'],
+                    'order_id' => $order->id
+                ]);
             }
-            $data->save();
+            DB::commit();
             return redirect('/orders')->with('success', 'Order updated success!');
         } catch (Exception $e) {
+            DB::rollBack();
             Log::debug('OrderController update Error:');
             Log::debug($e);
             return redirect()->back()->with('error', $e->getMessage());
