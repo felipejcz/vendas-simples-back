@@ -4,7 +4,7 @@
 <div class="container">
     <div class="row justify-content-center">
 
-        <div class="col-md-8">
+        <div class="col-md-12">
             <div class="card">
                 <div class="card-header">{{ __('Orders') }}</div>
 
@@ -45,7 +45,7 @@
                                         <td>{{$item->created_at}}</td>
                                         <td>{{$item->customer->name}}</td>
                                         <td>{{$item->description}}</td>
-                                        <td>-</td>
+                                        <td>{{$item->amount}}</td>
                                         <td>{{$item->status}}</td>
                                         <td class="text-center">
                                             <a href="/orders/edit/{{$item->id}}" class="btn btn-outline-info btn-sm">Edit</a>
