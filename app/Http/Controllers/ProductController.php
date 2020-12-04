@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use Exception;
+use App\Models\OrderItems;
 use App\Models\Product;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Exception;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
 
 class ProductController extends Controller
 {
@@ -52,10 +55,13 @@ class ProductController extends Controller
     public function store(Request $request)
     {
         try {
+            DB::beginTransaction();
             $params = $request->all();
             Product::create($params);
+            DB::commit();
             return redirect('/products')->with('success', 'Product created success!');
         } catch (Exception $e) {
+            DB::rollBack();
             Log::debug('ProductController store Error:');
             Log::debug($e);
             return redirect()->back()->with('error', $e->getMessage())->withInput($request->all());
@@ -111,6 +117,7 @@ class ProductController extends Controller
     public function update(Request $request)
     {
         try {
+            DB::beginTransaction();
             $params = $request->all();
             $data = Product::findOrFail($params['id']);
             $data->name = $params['name'];
@@ -119,8 +126,10 @@ class ProductController extends Controller
             $data->stock = $params['stock'];
             $data->active = $params['active'];
             $data->save();
+            DB::commit();
             return redirect('/products')->with('success', 'Product updated success!');
         } catch (Exception $e) {
+            DB::rollBack();
             Log::debug('ProductController update Error:');
             Log::debug($e);
             return redirect()->back()->with('error', $e->getMessage());
@@ -136,14 +145,39 @@ class ProductController extends Controller
     public function destroy($id)
     {
         try {
+            DB::beginTransaction();
+            $msg = 'Product destroyed success!';
             $data = Product::findOrFail($id);
-            $data->delete();
+            if (OrderItems::where('product_id', $data->id)->count() > 0) {
+                $data->active = false;
+                $data->save();
+                $msg = 'product successfully inactivated!';
+            } else {
+                $data->delete();
+            }
+            DB::commit();
             return redirect('/products')->with('success', 'Product destroyed success!');
+        } catch (QueryException $e) {
+            DB::rollBack();
+            switch ($e->getCode()) {
+                case 23000:
+                    $msg = 'Cannot delete a product linked to sale.';
+                    break;
+
+                default:
+                    $msg = $e->getMessage();
+                    break;
+            }
+            Log::debug('ProductController destroy Error:');
+            Log::debug($e);
+            return redirect()->back()->with('error', $msg);
         } catch (ModelNotFoundException $e) {
+            DB::rollBack();
             Log::debug('ProductController destroy Error:');
             Log::debug($e);
             return redirect()->back()->with('error', 'Product not found with this id.');
         } catch (Exception $e) {
+            DB::rollBack();
             Log::debug('ProductController destroy Error:');
             Log::debug($e);
             return redirect()->back()->with('error', $e->getMessage());
